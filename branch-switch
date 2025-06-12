@@ -1,0 +1,205 @@
+#!/bin/bash
+
+# branch-switch - A tool for simplified git branch switching with aliases
+# Usage: branch-switch <branch-name-or-alias> [--pull]
+
+CONFIG_FILE="$HOME/.branch-switch-config"
+
+# Function to display usage
+show_usage() {
+    echo "Usage: branch-switch <branch-name-or-alias> [--pull]"
+    echo "       branch-switch --config"
+    echo "       branch-switch --list"
+    echo ""
+    echo "Options:"
+    echo "  --pull     Checkout branch and pull latest changes"
+    echo "  --config   Open configuration file for editing"
+    echo "  --list     List all configured aliases for current directory"
+    echo ""
+    echo "Examples:"
+    echo "  branch-switch main"
+    echo "  branch-switch prod --pull"
+    echo "  branch-switch dev"
+}
+
+# Function to create default config file
+create_default_config() {
+    cat > "$CONFIG_FILE" << 'EOF'
+# Branch Switch Configuration
+# Format: /full/path/to/directory:alias_name:actual_branch_name
+#
+# Examples:
+# /home/user/my_project:prod:production_branch
+# /home/user/my_project:dev:development_branch
+# /home/user/another_project:main:master
+#
+# You can add multiple aliases for the same directory:
+# /home/user/my_project:prod:production_branch
+# /home/user/my_project:staging:staging_branch
+
+EOF
+    echo "Created default config file at $CONFIG_FILE"
+    echo "Edit it to add your branch aliases."
+}
+
+# Function to get current directory
+get_current_dir() {
+    pwd
+}
+
+# Function to resolve branch alias
+resolve_branch_alias() {
+    local current_dir="$1"
+    local alias="$2"
+    
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "$alias"  # Return as-is if no config file
+        return
+    fi
+    
+    # Look for matching directory and alias
+    while IFS=':' read -r dir alias_name branch_name || [[ -n "$dir" ]]; do
+        # Skip empty lines and comments
+        [[ -z "$dir" || "$dir" =~ ^[[:space:]]*# ]] && continue
+        
+        # Remove leading/trailing whitespace
+        dir=$(echo "$dir" | xargs)
+        alias_name=$(echo "$alias_name" | xargs)
+        branch_name=$(echo "$branch_name" | xargs)
+        
+        if [[ "$current_dir" == "$dir" && "$alias" == "$alias_name" ]]; then
+            echo "$branch_name"
+            return
+        fi
+    done < "$CONFIG_FILE"
+    
+    # If no alias found, return the original input
+    echo "$alias"
+}
+
+# Function to list aliases for current directory
+list_aliases() {
+    local current_dir=$(get_current_dir)
+    
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "No configuration file found. Run 'branch-switch --config' to create one."
+        return 1
+    fi
+    
+    echo "Branch aliases for $current_dir:"
+    echo "=================================="
+    
+    local found=false
+    while IFS=':' read -r dir alias_name branch_name || [[ -n "$dir" ]]; do
+        # Skip empty lines and comments
+        [[ -z "$dir" || "$dir" =~ ^[[:space:]]*# ]] && continue
+        
+        # Remove leading/trailing whitespace
+        dir=$(echo "$dir" | xargs)
+        alias_name=$(echo "$alias_name" | xargs)
+        branch_name=$(echo "$branch_name" | xargs)
+        
+        if [[ "$current_dir" == "$dir" ]]; then
+            printf "  %-15s -> %s\n" "$alias_name" "$branch_name"
+            found=true
+        fi
+    done < "$CONFIG_FILE"
+    
+    if [[ "$found" == false ]]; then
+        echo "  No aliases configured for this directory."
+        echo ""
+        echo "Edit the config file to add aliases:"
+        echo "  branch-switch --config"
+    fi
+}
+
+# Function to check if we're in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo "Error: Not in a git repository"
+        exit 1
+    fi
+}
+
+# Function to switch branches
+switch_branch() {
+    local branch="$1"
+    local pull_flag="$2"
+    local current_dir=$(get_current_dir)
+    
+    # Resolve branch alias
+    local actual_branch=$(resolve_branch_alias "$current_dir" "$branch")
+    
+    echo "Switching to branch: $actual_branch"
+    
+    # Check if branch exists locally
+    if git show-ref --verify --quiet refs/heads/"$actual_branch"; then
+        # Branch exists locally
+        if ! git checkout "$actual_branch"; then
+            echo "Error: Failed to checkout branch '$actual_branch'"
+            exit 1
+        fi
+    else
+        # Try to checkout from remote
+        echo "Branch '$actual_branch' not found locally. Trying to checkout from remote..."
+        if ! git checkout -b "$actual_branch" "origin/$actual_branch" 2>/dev/null; then
+            # If that fails, try regular checkout (might be a new branch)
+            if ! git checkout "$actual_branch"; then
+                echo "Error: Failed to checkout branch '$actual_branch'"
+                echo "Make sure the branch exists locally or remotely."
+                exit 1
+            fi
+        fi
+    fi
+    
+    # Pull if requested
+    if [[ "$pull_flag" == "--pull" ]]; then
+        echo "Pulling latest changes..."
+        if ! git pull; then
+            echo "Warning: Failed to pull changes"
+            exit 1
+        fi
+    fi
+    
+    echo "Successfully switched to branch: $actual_branch"
+}
+
+# Main script logic
+main() {
+    # Handle special flags
+    case "$1" in
+        --config)
+            [[ ! -f "$CONFIG_FILE" ]] && create_default_config
+            ${EDITOR:-nano} "$CONFIG_FILE"
+            exit 0
+            ;;
+        --list)
+            list_aliases
+            exit 0
+            ;;
+        --help|-h|"")
+            show_usage
+            exit 0
+            ;;
+    esac
+    
+    # Check if we're in a git repository
+    check_git_repo
+    
+    # Parse arguments
+    local branch="$1"
+    local pull_flag="$2"
+    
+    # Validate pull flag
+    if [[ -n "$pull_flag" && "$pull_flag" != "--pull" ]]; then
+        echo "Error: Invalid option '$pull_flag'"
+        echo "Use --pull to pull after checkout, or omit for checkout only"
+        exit 1
+    fi
+    
+    # Switch branch
+    switch_branch "$branch" "$pull_flag"
+}
+
+# Run main function with all arguments
+main "$@"
