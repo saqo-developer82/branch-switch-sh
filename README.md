@@ -11,6 +11,7 @@
 1. **Create configuration file:**<br>
    `branch-switch --config`
 2. **Add your aliases** to the config file. Format:<br>
+   Manually
    `/full/path/to/directory:alias_name:actual_branch_name`<br>
    Example:<br>
    ```
@@ -19,6 +20,10 @@
    /home/user/my_project:staging:staging_branch
    /home/user/another_project:main:master
    ```
+   Also can be added via command line using this command in your root directory
+   `branch-switch --add <alias-name> <branch-name>`
+
+   
 
 <h1>Usage Examples:</h1>
 
@@ -32,5 +37,7 @@
   `branch-switch --list`
 - Open configuration file<br>
   `branch-switch --config`
+- Add to configuration file<br>
+  `branch-switch --add <alias-name> <branch-name>`
 - Show help<br>
   `branch-switch --help`
