@@ -21,9 +21,7 @@
    /home/user/another_project:main:master
    ```
    Also can be added via command line using this command in your root directory
-   `branch-switch --add <alias-name> <branch-name>`
-
-   
+   `branch-switch --add <alias-name> <branch-name>`   
 
 <h1>Usage Examples:</h1>
 
@@ -41,3 +39,18 @@
   `branch-switch --add <alias-name> <branch-name>`
 - Show help<br>
   `branch-switch --help`
+
+<h3>Can be used also the short version of `baranch-switch` command</h3>
+For bash, add this line to your ~/.bashrc or ~/.bash_profile:<br>
+`alias bs='you branch-switch bash script path'`<br>
+for example `alias bs='/usr/local/bin/branch-switch'`<br><br>
+
+After adding the alias, either:<br>
+Restart your terminal, or run `source ~/.bashrc` to load the changes<br>
+Now you can use bs instead of `branch-switch`<br>
+. For example:
+  ```
+  bs main
+  bs --add prod production
+  bs --list
+  ```
