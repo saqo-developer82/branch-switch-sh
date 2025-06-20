@@ -8,18 +8,22 @@ CONFIG_FILE="$HOME/.branch-switch-config"
 # Function to display usage
 show_usage() {
     echo "Usage: branch-switch <branch-name-or-alias> [--pull]"
+    echo "       branch-switch --add <alias-name> <branch-name>"
     echo "       branch-switch --config"
     echo "       branch-switch --list"
     echo ""
     echo "Options:"
-    echo "  --pull     Checkout branch and pull latest changes"
-    echo "  --config   Open configuration file for editing"
-    echo "  --list     List all configured aliases for current directory"
+    echo "  --add        Add a new branch alias for current directory"
+    echo "  --pull       Checkout branch and pull latest changes"
+    echo "  --config     Open configuration file for editing"
+    echo "  --list       List all configured aliases for current directory"
     echo ""
     echo "Examples:"
     echo "  branch-switch main"
     echo "  branch-switch prod --pull"
     echo "  branch-switch dev"
+    echo "  branch-switch --add prod production"
+    echo "  branch-switch --list"
 }
 
 # Function to create default config file
@@ -51,28 +55,28 @@ get_current_dir() {
 resolve_branch_alias() {
     local current_dir="$1"
     local alias="$2"
-    
+
     if [[ ! -f "$CONFIG_FILE" ]]; then
         echo "$alias"  # Return as-is if no config file
         return
     fi
-    
+
     # Look for matching directory and alias
     while IFS=':' read -r dir alias_name branch_name || [[ -n "$dir" ]]; do
         # Skip empty lines and comments
         [[ -z "$dir" || "$dir" =~ ^[[:space:]]*# ]] && continue
-        
+
         # Remove leading/trailing whitespace
         dir=$(echo "$dir" | xargs)
         alias_name=$(echo "$alias_name" | xargs)
         branch_name=$(echo "$branch_name" | xargs)
-        
+
         if [[ "$current_dir" == "$dir" && "$alias" == "$alias_name" ]]; then
             echo "$branch_name"
             return
         fi
     done < "$CONFIG_FILE"
-    
+
     # If no alias found, return the original input
     echo "$alias"
 }
@@ -80,37 +84,66 @@ resolve_branch_alias() {
 # Function to list aliases for current directory
 list_aliases() {
     local current_dir=$(get_current_dir)
-    
+
     if [[ ! -f "$CONFIG_FILE" ]]; then
         echo "No configuration file found. Run 'branch-switch --config' to create one."
         return 1
     fi
-    
+
     echo "Branch aliases for $current_dir:"
     echo "=================================="
-    
+
     local found=false
     while IFS=':' read -r dir alias_name branch_name || [[ -n "$dir" ]]; do
         # Skip empty lines and comments
         [[ -z "$dir" || "$dir" =~ ^[[:space:]]*# ]] && continue
-        
+
         # Remove leading/trailing whitespace
         dir=$(echo "$dir" | xargs)
         alias_name=$(echo "$alias_name" | xargs)
         branch_name=$(echo "$branch_name" | xargs)
-        
+
         if [[ "$current_dir" == "$dir" ]]; then
             printf "  %-15s -> %s\n" "$alias_name" "$branch_name"
             found=true
         fi
     done < "$CONFIG_FILE"
-    
+
     if [[ "$found" == false ]]; then
         echo "  No aliases configured for this directory."
         echo ""
         echo "Edit the config file to add aliases:"
         echo "  branch-switch --config"
     fi
+}
+
+# Function to add a new branch alias
+add_branch_alias() {
+    local current_dir=$(get_current_dir)
+    local alias_name="$1"
+    local branch_name="$2"
+
+    if [[ -z "$alias_name" || -z "$branch_name" ]]; then
+        echo "Error: Both alias name and branch name are required"
+        echo "Usage: branch-switch --add <alias-name> <branch-name>"
+        return 1
+    fi
+
+    # Check if branch exists locally
+    if ! git show-ref --verify --quiet refs/heads/"$branch_name"; then
+        echo "Error: Branch '$branch_name' does not exist locally"
+        return 1
+    fi
+
+    # Check if alias already exists for this directory
+    if grep -q "^$current_dir:$alias_name:" "$CONFIG_FILE" 2>/dev/null; then
+        echo "Warning: Alias '$alias_name' already exists for this directory"
+        return 1
+    fi
+
+    # Add new alias to config file
+    echo "$current_dir:$alias_name:$branch_name" >> "$CONFIG_FILE"
+    echo "Successfully added alias '$alias_name' for branch '$branch_name' in $current_dir"
 }
 
 # Function to check if we're in a git repository
@@ -126,12 +159,12 @@ switch_branch() {
     local branch="$1"
     local pull_flag="$2"
     local current_dir=$(get_current_dir)
-    
+
     # Resolve branch alias
     local actual_branch=$(resolve_branch_alias "$current_dir" "$branch")
-    
+
     echo "Switching to branch: $actual_branch"
-    
+
     # Check if branch exists locally
     if git show-ref --verify --quiet refs/heads/"$actual_branch"; then
         # Branch exists locally
@@ -151,7 +184,7 @@ switch_branch() {
             fi
         fi
     fi
-    
+
     # Pull if requested
     if [[ "$pull_flag" == "--pull" ]]; then
         echo "Pulling latest changes..."
@@ -160,7 +193,7 @@ switch_branch() {
             exit 1
         fi
     fi
-    
+
     echo "Successfully switched to branch: $actual_branch"
 }
 
@@ -175,6 +208,15 @@ main() {
             ;;
         --list)
             list_aliases
+            exit 0
+            ;;
+        --add)
+            if [[ $# -lt 3 ]]; then
+                echo "Error: Missing required arguments"
+                echo "Usage: branch-switch --add <alias-name> <branch-name>"
+                exit 1
+            fi
+            add_branch_alias "$2" "$3"
             exit 0
             ;;
         --help|-h|"")
